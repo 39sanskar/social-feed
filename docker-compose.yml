@@ -1,0 +1,73 @@
+# Local development stack: MongoDB + API + Vite frontend.
+#   docker compose up --build     → http://localhost:5173 (API on :5001)
+#   docker compose down           → stop (data is kept)
+#   docker compose down -v        → stop and wipe database, uploads and node_modules volumes
+#
+# Source folders are bind-mounted, so edits on the host hot-reload inside the
+# containers. Override any default below with a root-level .env file
+# (e.g. JWT_SECRET=..., CLOUDINARY_*, RESEND_API_KEY).
+
+services:
+  db:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017" # reachable from the host for Compass / mongosh
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  server:
+    build: ./server
+    restart: unless-stopped
+    command: npm run dev
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+    environment:
+      NODE_ENV: development
+      PORT: 5001
+      PUBLIC_URL: http://localhost:5001
+      CLIENT_URL: http://localhost:5173
+      MONGO_URI: mongodb://db:27017/social-feed
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-0123456789abcdef}
+      REQUIRE_VERIFIED_EMAIL: ${REQUIRE_VERIFIED_EMAIL:-false}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-Social-Feed <onboarding@resend.dev>}
+      TRENDING_MIN_AUTHORS: ${TRENDING_MIN_AUTHORS:-2}
+    volumes:
+      - ./server:/app                      # live source code
+      - server-node-modules:/app/node_modules # keep the container's deps, not the host's
+      - uploads:/app/uploads               # locally stored media survives restarts
+
+  client:
+    build: ./client
+    restart: unless-stopped
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    depends_on:
+      - server
+    ports:
+      - "5173:5173"
+    environment:
+      # Read by the browser, so it must be the host-facing URL, not http://server
+      VITE_API_URL: http://localhost:5001
+      CHOKIDAR_USEPOLLING: "true" # reliable hot reload on bind mounts (macOS/Windows)
+    volumes:
+      - ./client:/app
+      - client-node-modules:/app/node_modules
+
+volumes:
+  mongo-data:
+  uploads:
+  server-node-modules:
+  client-node-modules:
