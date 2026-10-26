@@ -9,7 +9,7 @@
 
 services:
   db:
-    image: mongo:7
+    image: mongo:8
     restart: unless-stopped
     ports:
       - "27017:27017" # reachable from the host for Compass / mongosh
